@@ -21,18 +21,31 @@ setUpPort('data', config.port2);
 
 // --------- HELPER FUNCTION ------------------------
 
-function setUpPort(folderPath: string, port: number) {
-  fs.readdir(folderPath)
-    .then((files) => {
-    
-      files.map(file => {
-        // clean file name = route
-        const endpoint = file.split(".")[ 0 ];
-        app.use(endpoint, new BaseController(app, endpoint, folderPath));
-      });
+async function setUpPort(folderPath: string, port: number) {
+  await getfiles();
+  console.log(`Listening on port ${port}...`);
+  app.listen(port);
+}
 
-      console.log(`Listening on port ${port}...`);
-      app.listen(port);
-  })
-  .catch(error => error);
+// ---------- LETS GET RECURSIVE! ------------------------
+
+async function getfiles(folderPath: string = './data') {
+  return fs.readdir(folderPath)
+    .then(async (files) => {
+
+      files.map(async file => {
+        const fullPath = `${folderPath}/${file}`;
+        const fileStats = await fs.stat(fullPath);
+
+        if (fileStats.isDirectory()) {
+          await getfiles(fullPath);
+        } else {
+          const path = fullPath.replace('.json', '');
+          const endpoint = path.replace('./data/', '');
+
+          app.use(endpoint, new BaseController(app, endpoint, path));
+        }
+      });
+    })
+    .catch(error => error);
 }
