@@ -1,10 +1,15 @@
-import { BaseController } from "./controllers";
+import { DataRoute, indexRouter } from './routes';
 import { config } from './config';
+import { GLOBALS } from './globals';
 
-var express = require('express');
-var app = express();
-const fileSystem = require('fs');
+
+import * as fileSystem from 'fs';
+import * as express from 'express';
 const fs = fileSystem.promises;
+
+const app = express();
+const http = require('http').Server(app);
+const io = require('socket.io')(http);
 
 // CORS Support
 app.use(function (req, res, next) {
@@ -16,34 +21,54 @@ app.use(function (req, res, next) {
 
 // ------------------ PORTS -------------------------
 
-setUpPort('data', config.port1);
-setUpPort('data', config.port2);
+setUpPort('data', config.port);
 
 // --------- HELPER FUNCTION ------------------------
 
 async function setUpPort(folderPath: string, port: number) {
   await getfiles();
+  await addIndexRoute();
   console.log(`Listening on port ${port}...`);
-  app.listen(port);
+  http.listen(port);
+}
+
+// ------------------- Base Route ------------------------
+
+async function addIndexRoute() {
+  app.get('/', function(req, res){
+    res.sendFile(__dirname + '/index.html');
+  });
+
+  io.on('connection', (socket) => {
+    console.log('a user connected');
+    socket.on('disconnect', () => {
+      console.log('user disconnected');
+    });
+
+    socket.on('chat message', function(msg){
+      io.emit('chat message', msg);
+    });
+  });
 }
 
 // ---------- LETS GET RECURSIVE! ------------------------
 
-async function getfiles(folderPath: string = './data') {
+async function getfiles(folderPath: string = GLOBALS.dataDir) {
+  
   return fs.readdir(folderPath)
     .then(async (files) => {
 
       files.map(async file => {
-        const fullPath = `${folderPath}/${file}`;
+        const fullPath = `${folderPath}${file}`;
         const fileStats = await fs.stat(fullPath);
 
         if (fileStats.isDirectory()) {
-          await getfiles(fullPath);
+          await getfiles(fullPath + '/');
         } else {
-          const path = fullPath.replace('.json', '');
-          const endpoint = path.replace('./data/', '');
+          const endpoint = fullPath.replace(/^[^_]*(\/data\/)/, '');
+          const controller = new DataRoute(endpoint);
 
-          app.use(endpoint, new BaseController(app, endpoint, path));
+          app.use(controller.router);
         }
       });
     })
